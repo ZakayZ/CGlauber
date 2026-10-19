@@ -21,6 +21,7 @@
 #include "GlauberConst.hh"
 
 #include <cmath>
+#include <iterator>
 #include <map>
 #include <stdexcept>
 #include <unordered_map>
@@ -159,7 +160,10 @@ CGlauberGenerator::CGlauberGenerator(const std::string& name_a, const std::strin
         {350.0, 32.63}, {375.0, 32.44}, {400.0, 32.24}, {425.0, 32.01},
     };
     auto next_val = bystricky.lower_bound(en_at_rest / gconst::kGeV);
-    auto tab_val = next_val++;
+    if (next_val == bystricky.begin()) {
+      ++next_val;
+    }
+    const auto tab_val = std::prev(next_val);
     const double slope = (next_val->second - tab_val->second) / (next_val->first - tab_val->first);
     const double intercept = next_val->second - slope * next_val->first;
     x_sect_nn_ = slope * en_at_rest / gconst::kGeV + intercept;

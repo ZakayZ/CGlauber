@@ -1,11 +1,14 @@
 #include <CGlauberFactory.hh>
 #include <COLA.hh>
+#include <GlauberConst.hh>
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <memory>
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <utility>
 
 extern "C" cola::VModule* LoadCOLAModule();
 
@@ -32,6 +35,20 @@ namespace {
     return {
         {"name_a", "Au"}, {"name_b", "Au"}, {"energy", "200"}, {"is_collider", "1"}, {"fermiMom", "1"},
     };
+  }
+
+  void ExpectCrossSection(const std::string& energy, double expected, bool is_collider = false) {
+    SCOPED_TRACE(energy);
+    auto params = DefaultGlauberParams();
+    params["energy"] = energy;
+    params["is_collider"] = is_collider ? "1" : "0";
+    CGlauberFactory factory;
+    const auto filter = factory.Create(params);
+    auto* generator = dynamic_cast<cola::VGenerator*>(filter.get());
+    ASSERT_NE(generator, nullptr);
+    const auto event = (*generator)();
+    ASSERT_NE(event, nullptr);
+    EXPECT_NEAR(event->ini_state.sect_nn, expected, 1.e-5);
   }
 
 }  // namespace
@@ -82,4 +99,34 @@ TEST(CGlauberTest, ParseAndRunViaMetaProcessor) {
   const auto event = (*ensemble.generator)();
   ASSERT_NE(event, nullptr);
   EXPECT_FALSE(event->particles.empty());
+}
+
+TEST(CGlauberTest, FixedTargetCrossSectionMatchesTable) {
+  for (const auto& [energy, expected] : {std::pair{"0.28", 0.027},
+                                         {"0.29", 0.051},
+                                         {"0.50", 5.87},
+                                         {"1.00", 24.39},
+                                         {"20.0", 30.00},
+                                         {"200.0", 32.79},
+                                         {"400.0", 32.24}}) {
+    ExpectCrossSection(energy, expected);
+  }
+}
+
+TEST(CGlauberTest, FixedTargetCrossSectionInterpolatesBracketingPoints) {
+  for (const auto& [energy, expected] : {std::pair{"0.285", 0.039}, {"5.5", 28.70}, {"210.0", 32.842}}) {
+    ExpectCrossSection(energy, expected);
+  }
+}
+
+TEST(CGlauberTest, FixedTargetCrossSectionUsesLastTableInterval) {
+  for (const auto& [energy, expected] : {std::pair{"400.01", 32.239908}, {"410.0", 32.148}, {"424.999", 32.0100092}}) {
+    ExpectCrossSection(energy, expected);
+  }
+}
+
+TEST(CGlauberTest, ColliderCrossSectionUsesEquivalentFixedTargetEnergy) {
+  const auto mass = gconst::kNucleonAverMass / gconst::kGeV;
+  const auto collider_energy = std::sqrt(4 * mass * mass + 2 * mass * 410.0);
+  ExpectCrossSection(std::to_string(collider_energy), 32.148, true);
 }
